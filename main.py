@@ -1,3 +1,4 @@
+import re
 import time
 import logging
 import os
@@ -76,47 +77,6 @@ def execute_web_action(driver, action_type, selector_type, selector_value, input
         logger.error(f"Gagal eksekusi: {e}")
         return False
 
-# 2. PERBAIKAN HANDLER CHAT (Memisahkan AI dari Eksekusi)
-async def handle_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global tma_driver_instance
-    user_text = update.message.text
-    
-    # 1. Pastikan browser sudah terbuka (jika user lupa ketik /open_web)
-    if not tma_driver_instance:
-        await update.message.reply_text("⚠️ Browser belum aktif! Ketik /open_web [URL] dulu, Boss.")
-        return
-
-    # 2. Ambil keputusan AI
-    status_msg = await update.message.reply_text("🤖 *Menganalisis perintah...*")
-    ai_reply = await asyncio.to_thread(get_ai_decision, user_text, tma_driver_instance.page_source[:2000])
-    
-    # 3. Eksekusi dengan sistem "Loop Action" (Penting untuk perintah beruntun!)
-    if "[ACTION:" in ai_reply:
-        try:
-            # Cari SEMUA aksi dalam satu balasan AI
-            actions = re.findall(r"\[ACTION:(.*?)\|SELECTOR:(.*?)\|VALUE:(.*?)\|INPUT:(.*?)\]", ai_reply)
-            
-            if not actions:
-                await status_msg.edit_text("❌ AI gagal memformat perintah.")
-                return
-
-            for action, sel_type, sel_val, inp_txt in actions:
-                inp_txt = None if inp_txt == "none" else inp_txt
-                await status_msg.edit_text(f"⚡ *Sedang melakukan: {action} ke {sel_val}...*")
-                
-                success = await asyncio.to_thread(execute_web_action, tma_driver_instance, action, sel_type, sel_val, inp_txt)
-                
-                if not success:
-                    await update.message.reply_text(f"❌ *Aksi gagal di:* {sel_val}. Mungkin selector salah?")
-                    return
-            
-            await status_msg.edit_text("✅ *Semua aksi sukses dilakukan, Boss!*")
-            
-        except Exception as e:
-            await update.message.reply_text(f"❌ *Fatal Error:* {e}")
-    else:
-        await status_msg.edit_text(ai_reply)
-
 # --- FUNGSI OTAK AI DENGAN KONTEKS BROWSER ---
 
 def get_ai_decision(user_message: str, page_source: str) -> str:
@@ -185,48 +145,46 @@ async def close_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Browser memang sudah dalam posisi mati, Boss.")
 
 async def handle_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Membaca chat biasa, dikirim ke AI, lalu AI otomatis menggerakkan browser jika ada perintah web"""
     global tma_driver_instance
     user_text = update.message.text
-    status_msg = await update.message.reply_text("🤖 *Asisten sedang membaca situasi...*")
     
-    try:
-        loop = asyncio.get_running_loop()
+    if not tma_driver_instance:
+        await update.message.reply_text("⚠️ Browser belum aktif! Ketik /open_web [URL] dulu, Boss.")
+        return
+
+    status_msg = await update.message.reply_text("🤖 *Menganalisis perintah...*")
+    
+    # 1. AI Menganalisis & Memberikan daftar aksi
+    ai_reply = await asyncio.to_thread(get_ai_decision, user_text, tma_driver_instance.page_source[:2000])
+    
+    # 2. Jika AI mengeluarkan perintah [ACTION:...]
+    if "[ACTION:" in ai_reply:
+        # Menggunakan regex untuk menangkap SEMUA aksi (bisa lebih dari satu!)
+        actions = re.findall(r"\[ACTION:(.*?)\|SELECTOR:(.*?)\|VALUE:(.*?)\|INPUT:(.*?)\]", ai_reply)
         
-        # Ambil isi halaman web saat ini (jika browser terbuka)
-        page_source = ""
-        if tma_driver_instance:
-            page_source = await loop.run_in_executor(None, lambda: tma_driver_instance.page_source)
-            
-        # Tanya ke AI Gemini
-        ai_reply = await loop.run_in_executor(None, get_ai_decision, user_text, page_source)
-        
-        # Cek apakah AI menyisipkan perintah rahasia [ACTION:...]
-        if "[ACTION:" in ai_reply:
-            # Tampilkan teks jawaban AI ke user dulu
+        if actions:
             clean_reply = ai_reply.split("[ACTION:")[0].strip()
-            await status_msg.edit_text(f"🤖 {clean_reply}\n\n⚡ *Menjalankan aksi otomatisasi...*")
+            await status_msg.edit_text(f"🤖 {clean_reply}\n\n⚡ *Menjalankan {len(actions)} aksi...*")
             
-            # Ekstrak data perintah rahasia dari teks AI
-            import re
-            match = re.search(r"\[ACTION:(.*?)\|SELECTOR:(.*?)\|VALUE:(.*?)\|INPUT:(.*?)\]", ai_reply)
-            if match and tma_driver_instance:
-                action, sel_type, sel_val, inp_txt = match.groups()
-                if inp_txt == "none": inp_txt = None
+            for action, sel_type, sel_val, inp_txt in actions:
+                # Bersihkan input
+                input_val = None if inp_txt == "none" else inp_txt
                 
-                # Eksekusi gerakan Selenium secara asinkron
-                success = await loop.run_in_executor(None, automate_tma_action, tma_driver_instance, action, sel_type, sel_val, inp_txt)
+                # Eksekusi aksi satu per satu
+                success = await asyncio.to_thread(execute_web_action, tma_driver_instance, action, sel_type, sel_val, input_val)
                 
-                if success:
-                    await update.message.reply_text("✅ *Aksi Sukses, Boss!* Ada perintah selanjutnya?")
-                else:
-                    await update.message.reply_text("❌ *Gagal:* Saya tahu apa yang harus diklik, tapi elemennya mendadak hilang atau berubah di halaman web.")
+                if not success:
+                    await update.message.reply_text(f"❌ *Gagal di:* {sel_val}. Mungkin elemen belum muncul/salah selector?")
+                    return # Stop jika ada yang gagal
+                
+                await asyncio.sleep(1) # Jeda agar bot tidak diblokir web
+            
+            await update.message.reply_text("✅ *Semua aksi sukses dilakukan, Boss!*")
         else:
-            # Jika chat biasa tanpa perintah gerak browser
-            await status_msg.edit_text(ai_reply)
-            
-    except Exception as e:
-        await status_msg.edit_text(f"Aduh Boss, ada kendala teknis: {e}")
+            await status_msg.edit_text("❌ AI mengeluarkan perintah tapi formatnya tidak terbaca.")
+    else:
+        # Jika bukan perintah aksi, tampilkan jawaban chat biasa
+        await status_msg.edit_text(ai_reply)
 
 # --- FUNGSI UTAMA ---
 def main():
