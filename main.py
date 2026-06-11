@@ -1,5 +1,5 @@
-import logging
 import os
+import logging
 import asyncio
 from dotenv import load_dotenv
 from telegram import Update
@@ -7,6 +7,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from web3 import Web3
 
 # Memuat data rahasia dari file .env
+
+load_dotenv()
+
+# 2. Ambil nilai dari environment variables
+# Kita buat variabelnya dulu di sini
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
 if not TOKEN:
     # Ini untuk berjaga-jaga jika di Railway variabel belum terpasang
     print("ERROR: Variabel TELEGRAM_BOT_TOKEN tidak ditemukan!")
