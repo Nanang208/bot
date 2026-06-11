@@ -37,32 +37,28 @@ tma_driver_instance = None
 # --- FUNGSI MESIN BROWSER (SELENIUM) ---
 
 def initialize_selenium_driver():
-    """Fungsi bypass langsung tanpa webdriver-manager untuk Railway Linux"""
+    """Fungsi pembuka browser yang dikunci total ke Driver lokal Railway"""
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new") 
+    options.add_argument("--headless=new") # Wajib tanpa layar di server
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=414,896") 
     options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
     
-    # Paksa langsung pakai Chromium bawaan dari file railway.json kemarin
+    # KUNCI 1: Paksa pakai Chromium bawaan sistem Linux Railway
     options.binary_location = "/usr/bin/chromium"
     
-    # Jalankan langsung ke sistem binary tanpa embel-embel pengelola otomatis
     try:
-        # Jalur default paket Chromium-Driver di Linux apt
+        # KUNCI 2: Paksa jalankan Chromedriver resmi dari apt Linux Railway
+        # Ini akan mem-bypass / mematikan fitur download otomatis yang rusak di cache tadi
         service = Service(executable_path="/usr/bin/chromedriver")
         driver = webdriver.Chrome(service=service, options=options)
+        logger.info("Sukses membuka browser via jalur utama sistem Railway.")
     except Exception as e:
-        logger.warning(f"Jalur utama gagal, mencoba jalur alternatif Linux: {e}")
-        try:
-            # Jalur alternatif kedua di beberapa server cloud
-            service = Service(executable_path="/usr/lib/chromium-browser/chromedriver")
-            driver = webdriver.Chrome(service=service, options=options)
-        except Exception as err:
-            logger.error(f"Semua jalur Linux buntu! Menggunakan setelan standar: {err}")
-            driver = webdriver.Chrome(options=options)
+        logger.warning(f"Jalur utama sistem gagal, mencoba fallback: {e}")
+        # Jalur cadangan jika diuji di Windows komputer lokal milik Boss Nanang
+        driver = webdriver.Chrome(options=options)
         
     return driver
 
