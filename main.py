@@ -37,27 +37,32 @@ tma_driver_instance = None
 # --- FUNGSI MESIN BROWSER (SELENIUM) ---
 
 def initialize_selenium_driver():
-    """Fungsi pembuka browser yang sudah diperbaiki khusus untuk server Railway Linux"""
+    """Fungsi bypass langsung tanpa webdriver-manager untuk Railway Linux"""
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new") # Wajib di Railway agar berjalan tanpa layar
+    options.add_argument("--headless=new") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
     options.add_argument("--window-size=414,896") 
     options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
     
-    # Beritahu Selenium posisi Chromium di Linux Railway
+    # Paksa langsung pakai Chromium bawaan dari file railway.json kemarin
     options.binary_location = "/usr/bin/chromium"
     
-    # Langsung jalankan service menggunakan Chromium bawaan sistem Linux
+    # Jalankan langsung ke sistem binary tanpa embel-embel pengelola otomatis
     try:
-        # Cara utama untuk Server Railway Linux
+        # Jalur default paket Chromium-Driver di Linux apt
         service = Service(executable_path="/usr/bin/chromedriver")
         driver = webdriver.Chrome(service=service, options=options)
     except Exception as e:
-        logger.warning(f"Gagal pakai cara Linux, mencoba cara otomatis (Mungkin sedang running di Windows lokal): {e}")
-        # Cara cadangan jika Boss Nanang tes di Windows laptop sendiri
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
+        logger.warning(f"Jalur utama gagal, mencoba jalur alternatif Linux: {e}")
+        try:
+            # Jalur alternatif kedua di beberapa server cloud
+            service = Service(executable_path="/usr/lib/chromium-browser/chromedriver")
+            driver = webdriver.Chrome(service=service, options=options)
+        except Exception as err:
+            logger.error(f"Semua jalur Linux buntu! Menggunakan setelan standar: {err}")
+            driver = webdriver.Chrome(options=options)
         
     return driver
 
