@@ -1,8 +1,10 @@
+import time
 import undetected_chromedriver as uc
 import logging
 import os
 import asyncio
 import random
+from selenium.common.exceptions import StaleElementReferenceException, ElementClickInterceptedException
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -50,35 +52,61 @@ def initialize_selenium_driver():
     logger.info("🚀 DOCKER CHROME BERHASIL MENYALA SEMPURNA!")
     return driver
 
-def automate_tma_action(driver, action, selector_type, selector_value, input_text=None):
-    """Fungsi eksekutor tangan robot untuk nge-klik atau mengetik"""
+
+
+def automate_tma_action(driver, action_data):
+    """Fungsi eksekusi aksi otomatis yang kebal dari elemen hilang/berubah"""
     try:
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
+        selector_type = action_data.get("selector_type", "").lower()
+        selector_value = action_data.get("selector_value", "")
+        action_type = action_data.get("action_type", "").lower()
+        text_to_type = action_data.get("text_to_type", "")
 
-        # Ubah teks jenis selector menjadi objek Selenium By
-        by_type = By.XPATH
-        if selector_type == "id": by_type = By.ID
-        elif selector_type == "css": by_type = By.CSS_SELECTOR
-        elif selector_type == "class_name": by_type = By.CLASS_NAME
+        # Pemetaan Selector
+        by_type = By.CSS_SELECTOR
+        if selector_type == "xpath":
+            by_type = By.XPATH
+        elif selector_type == "id":
+            by_type = By.ID
 
-        # Tunggu sampai elemen muncul di layar (maksimal 10 detik)
-        element = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_transform((by_type, selector_value)) if hasattr(EC, 'presence_of_element_transform') else EC.presence_of_element_located((by_type, selector_value))
-        )
+        # Trik 1: Beri jeda 1 detik agar halaman benar-benar tenang/selesai memuat
+        time.sleep(1.5)
 
-        if action == "click":
-            element.click()
-            return True
-        elif action == "type" and input_text:
-            element.clear()
-            element.send_keys(input_text)
-            return True
-        return False
+        # Trik 2: Lakukan perulangan (Retries) sebanyak 3 kali jika elemen mendadak berubah
+        for attempt in range(3):
+            try:
+                element = WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((by_type, selector_value))
+                )
+                
+                # Pastikan elemen bisa diklik
+                element = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((by_type, selector_value))
+                )
+
+                if action_type == "click":
+                    # Trik 3: Gunakan JavaScript Click jika klik standar Selenium diblokir/berubah
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                    time.sleep(0.5)
+                    try:
+                        element.click()
+                    except (ElementClickInterceptedException, StaleElementReferenceException):
+                        driver.execute_script("arguments[0].click();", element)
+                        
+                elif action_type == "type":
+                    element.clear()
+                    element.send_keys(text_to_type)
+                
+                return True # Sukses! Keluar dari fungsi
+                
+            except StaleElementReferenceException:
+                if attempt == 2: raise # Jika sudah 3x gagal, lempar eror
+                logger.warning(f"Elemen berubah mendadak, mencoba ulang ke-{attempt+1}...")
+                time.sleep(1) # Tunggu semenit sebelum coba lagi
+                
     except Exception as e:
-        logger.error(f"Gagal melakukan aksi {action}: {e}")
-        return False
+        logger.error(f"Gagal eksekusi aksi otomatis: {e}")
+        raise e
 
 # --- FUNGSI OTAK AI DENGAN KONTEKS BROWSER ---
 
