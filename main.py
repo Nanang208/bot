@@ -81,34 +81,41 @@ async def handle_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global tma_driver_instance
     user_text = update.message.text
     
-    # Jika browser belum buka, fokus ke AI murni
+    # 1. Pastikan browser sudah terbuka (jika user lupa ketik /open_web)
     if not tma_driver_instance:
-        ai_reply = await asyncio.to_thread(get_ai_decision, user_text, "Browser belum buka.")
-        await update.message.reply_text(ai_reply)
+        await update.message.reply_text("⚠️ Browser belum aktif! Ketik /open_web [URL] dulu, Boss.")
         return
 
-    # Jika browser buka, gunakan AI sebagai "Penerjemah" ke Format Action
+    # 2. Ambil keputusan AI
+    status_msg = await update.message.reply_text("🤖 *Menganalisis perintah...*")
     ai_reply = await asyncio.to_thread(get_ai_decision, user_text, tma_driver_instance.page_source[:2000])
     
+    # 3. Eksekusi dengan sistem "Loop Action" (Penting untuk perintah beruntun!)
     if "[ACTION:" in ai_reply:
         try:
-            # Parsing format baru yang lebih rapi
-            match = re.search(r"\[ACTION:(.*?)\|SELECTOR:(.*?)\|VALUE:(.*?)\|INPUT:(.*?)\]", ai_reply)
-            if match:
-                action, sel_type, sel_val, inp_txt = match.groups()
+            # Cari SEMUA aksi dalam satu balasan AI
+            actions = re.findall(r"\[ACTION:(.*?)\|SELECTOR:(.*?)\|VALUE:(.*?)\|INPUT:(.*?)\]", ai_reply)
+            
+            if not actions:
+                await status_msg.edit_text("❌ AI gagal memformat perintah.")
+                return
+
+            for action, sel_type, sel_val, inp_txt in actions:
                 inp_txt = None if inp_txt == "none" else inp_txt
+                await status_msg.edit_text(f"⚡ *Sedang melakukan: {action} ke {sel_val}...*")
                 
-                await update.message.reply_text("⚡ *Menjalankan aksi...*")
                 success = await asyncio.to_thread(execute_web_action, tma_driver_instance, action, sel_type, sel_val, inp_txt)
                 
-                if success:
-                    await update.message.reply_text("✅ *Aksi Sukses!*")
-                else:
-                    await update.message.reply_text("❌ *Gagal:* Elemen tidak ditemukan.")
+                if not success:
+                    await update.message.reply_text(f"❌ *Aksi gagal di:* {sel_val}. Mungkin selector salah?")
+                    return
+            
+            await status_msg.edit_text("✅ *Semua aksi sukses dilakukan, Boss!*")
+            
         except Exception as e:
-            await update.message.reply_text(f"Error parsing action: {e}")
+            await update.message.reply_text(f"❌ *Fatal Error:* {e}")
     else:
-        await update.message.reply_text(ai_reply)
+        await status_msg.edit_text(ai_reply)
 
 # --- FUNGSI OTAK AI DENGAN KONTEKS BROWSER ---
 
