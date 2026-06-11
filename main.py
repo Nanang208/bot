@@ -37,23 +37,25 @@ tma_driver_instance = None
 # --- FUNGSI MESIN BROWSER (SELENIUM) ---
 
 def initialize_selenium_driver():
-    """Fungsi untuk membuka browser Chrome rahasia di server (Headless)"""
+    """Fungsi pembuka browser yang sudah diperbaiki khusus untuk server Railway Linux"""
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new") 
+    options.add_argument("--headless=new") # Wajib di Railway agar berjalan tanpa layar
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=414,896") 
     options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
     
-    # PERBAIKAN UNTUK RAILWAY: Mengarahkan langsung ke Chromium sistem Linux
+    # Beritahu Selenium posisi Chromium di Linux Railway
     options.binary_location = "/usr/bin/chromium"
     
-    # Di Linux server, kita bisa langsung panggil tanpa webdriver-manager jika package sudah terpasang
+    # Langsung jalankan service menggunakan Chromium bawaan sistem Linux
     try:
-        service = Service("/usr/bin/chromedriver")
+        # Cara utama untuk Server Railway Linux
+        service = Service(executable_path="/usr/bin/chromedriver")
         driver = webdriver.Chrome(service=service, options=options)
-    except:
-        # Jika dijalankan di Windows lokal kamu saat testing, dia akan memakai cara otomatis lama
+    except Exception as e:
+        logger.warning(f"Gagal pakai cara Linux, mencoba cara otomatis (Mungkin sedang running di Windows lokal): {e}")
+        # Cara cadangan jika Boss Nanang tes di Windows laptop sendiri
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         
