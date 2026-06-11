@@ -36,38 +36,19 @@ tma_driver_instance = None
 # --- FUNGSI MESIN BROWSER (SELENIUM) ---
 
 def initialize_selenium_driver():
-    """Fungsi pembuka browser dengan jalur biner yang dipaksa string bersih"""
-    options = uc.ChromeOptions()
-    options.add_argument("--headless=new") # Wajib tanpa layar di Railway
+    """Fungsi pembuka browser murni di dalam lingkungan Docker Linux"""
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless=new") # Wajib di server cloud
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=414,896")
+    options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
     
-    # Kita paksa masukkan alamat string jalur Chromium Railway
-    chrom_path = "/usr/bin/chromium"
-    driver_path = "/usr/bin/chromedriver"
-    
-    try:
-        # Panggil uc.Chrome dengan mendikte kedua jalur secara tegas dalam bentuk teks string
-        driver = uc.Chrome(
-            options=options,
-            browser_executable_path=str(chrom_path),
-            driver_executable_path=str(driver_path)
-        )
-        logger.info("🔥 BOOM! Undetected Chromedriver SUKSES besar via jalur sistem!")
-        return driver
-    except Exception as e:
-        logger.warning(f"Jalur sistem gagal: {e}. Mencoba trik headless murni...")
-        try:
-            # Jika masih mogok, kita coba lepas driver_executable_path-nya saja, biarkan patcher uc bekerja sendiri
-            driver = uc.Chrome(options=options, browser_executable_path=str(chrom_path))
-            return driver
-        except Exception as err:
-            logger.error(f"Semua metode uc gagal: {err}. Melompat ke selenium standar lokal...")
-            # Jalur darurat (biasanya jalan kalau Boss running di laptop Windows sendiri)
-            from selenium import webdriver
-            return webdriver.Chrome(options=options)
+    # Karena ini di Docker Chrome Resmi, lokasinya otomatis terbaca oleh sistem!
+    driver = webdriver.Chrome(options=options)
+    logger.info("🚀 DOCKER CHROME BERHASIL MENYALA SEMPURNA!")
+    return driver
 
 def automate_tma_action(driver, action, selector_type, selector_value, input_text=None):
     """Fungsi eksekutor tangan robot untuk nge-klik atau mengetik"""
