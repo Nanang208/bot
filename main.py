@@ -39,14 +39,24 @@ tma_driver_instance = None
 def initialize_selenium_driver():
     """Fungsi untuk membuka browser Chrome rahasia di server (Headless)"""
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new") # Wajib di Railway agar browser berjalan tanpa layar
+    options.add_argument("--headless=new") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--window-size=414,896") # Set ukuran layar HP (Mobile View)
+    options.add_argument("--window-size=414,896") 
     options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
     
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
+    # PERBAIKAN UNTUK RAILWAY: Mengarahkan langsung ke Chromium sistem Linux
+    options.binary_location = "/usr/bin/chromium"
+    
+    # Di Linux server, kita bisa langsung panggil tanpa webdriver-manager jika package sudah terpasang
+    try:
+        service = Service("/usr/bin/chromedriver")
+        driver = webdriver.Chrome(service=service, options=options)
+    except:
+        # Jika dijalankan di Windows lokal kamu saat testing, dia akan memakai cara otomatis lama
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        
     return driver
 
 def automate_tma_action(driver, action, selector_type, selector_value, input_text=None):
