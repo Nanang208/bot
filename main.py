@@ -7,7 +7,10 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from web3 import Web3
 
 # Memuat data rahasia dari file .env
-load_dotenv()
+if not TOKEN:
+    # Ini untuk berjaga-jaga jika di Railway variabel belum terpasang
+    print("ERROR: Variabel TELEGRAM_BOT_TOKEN tidak ditemukan!")
+    exit(1) # Bot akan berhenti jika tidak ada token
 
 # Konfigurasi Logging agar bot bisa lapor kalau ada eror
 logging.basicConfig(
