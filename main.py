@@ -1,21 +1,24 @@
 import time
-import undetected_chromedriver as uc
 import logging
 import os
 import asyncio
 import random
-from selenium.common.exceptions import StaleElementReferenceException, ElementClickInterceptedException
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from web3 import Web3
 import google.generativeai as genai
 
-# Library Baru untuk Browser Otomatis (Selenium)
+# Library Resmi Browser Otomatis (Selenium) - Sudah Bersih & Rapi
 from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import StaleElementReferenceException, ElementClickInterceptedException
+
 # Memuat data rahasia
-load_dotenv(override=True) 
+load_dotenv(override=True)
 
 # Konfigurasi Logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
