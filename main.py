@@ -12,8 +12,6 @@ import google.generativeai as genai
 # Library Baru untuk Browser Otomatis (Selenium)
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-
 # Memuat data rahasia
 load_dotenv(override=True) 
 
