@@ -37,27 +37,29 @@ tma_driver_instance = None
 # --- FUNGSI MESIN BROWSER (SELENIUM) ---
 
 def initialize_selenium_driver():
-    """Fungsi pembuka browser yang dikunci total ke Driver lokal Railway"""
+    """Fungsi pembuka browser yang memaksa sistem mengabaikan cache manager"""
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new") # Wajib tanpa layar di server
+    options.add_argument("--headless=new") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=414,896") 
     options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
     
-    # KUNCI 1: Paksa pakai Chromium bawaan sistem Linux Railway
+    # Beritahu lokasi Chromium bawaan dari railway.json
     options.binary_location = "/usr/bin/chromium"
     
+    # Set opsi agar driver tidak mencoba mencari versi terbaru ke internet
+    options.set_capability("browserVersion", "stable")
+    
     try:
-        # KUNCI 2: Paksa jalankan Chromedriver resmi dari apt Linux Railway
-        # Ini akan mem-bypass / mematikan fitur download otomatis yang rusak di cache tadi
+        # Panggil langsung lewat executable_path di dalam Service tanpa embel-embel
         service = Service(executable_path="/usr/bin/chromedriver")
         driver = webdriver.Chrome(service=service, options=options)
-        logger.info("Sukses membuka browser via jalur utama sistem Railway.")
+        logger.info("Sukses besar! Browser berhasil dijalankan lewat sistem Railway.")
     except Exception as e:
-        logger.warning(f"Jalur utama sistem gagal, mencoba fallback: {e}")
-        # Jalur cadangan jika diuji di Windows komputer lokal milik Boss Nanang
+        logger.warning(f"Metode utama gagal, mencoba fallback: {e}")
+        # Jika dicoba di laptop Windows pribadi Boss Nanang
         driver = webdriver.Chrome(options=options)
         
     return driver
