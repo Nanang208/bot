@@ -1,3 +1,4 @@
+import undetected_chromedriver as uc
 import logging
 import os
 import asyncio
@@ -37,32 +38,28 @@ tma_driver_instance = None
 # --- FUNGSI MESIN BROWSER (SELENIUM) ---
 
 def initialize_selenium_driver():
-    """Fungsi pembuka browser yang memaksa sistem mengabaikan cache manager"""
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new") 
+    """Fungsi pembuka browser anti-deteksi dan bebas dari error cache manager"""
+    options = uc.ChromeOptions()
+    options.add_argument("--headless=new") # Wajib tanpa layar di Railway
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=414,896") 
-    options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
-    
-    # Beritahu lokasi Chromium bawaan dari railway.json
-    options.binary_location = "/usr/bin/chromium"
-    
-    # Set opsi agar driver tidak mencoba mencari versi terbaru ke internet
-    options.set_capability("browserVersion", "stable")
+    options.add_argument("--window-size=414,896")
     
     try:
-        # Panggil langsung lewat executable_path di dalam Service tanpa embel-embel
-        service = Service(executable_path="/usr/bin/chromedriver")
-        driver = webdriver.Chrome(service=service, options=options)
-        logger.info("Sukses besar! Browser berhasil dijalankan lewat sistem Railway.")
+        # Undetected Chromedriver akan langsung merakit patch menggunakan Chromium resmi Railway
+        driver = uc.Chrome(
+            options=options,
+            browser_executable_path="/usr/bin/chromium",
+            driver_executable_path="/usr/bin/chromedriver"
+        )
+        logger.info("🔥 LUAR BIASA SUKSES! Undetected Chromedriver berhasil menyala!")
+        return driver
     except Exception as e:
-        logger.warning(f"Metode utama gagal, mencoba fallback: {e}")
-        # Jika dicoba di laptop Windows pribadi Boss Nanang
-        driver = webdriver.Chrome(options=options)
-        
-    return driver
+        logger.warning(f"Gagal memicu uc.Chrome di Linux: {e}. Mencoba versi standar lokal...")
+        # Jalur cadangan otomatis jika Boss Nanang eksekusi di Windows lokal
+        from selenium import webdriver
+        return webdriver.Chrome(options=options)
 
 def automate_tma_action(driver, action, selector_type, selector_value, input_text=None):
     """Fungsi eksekutor tangan robot untuk nge-klik atau mengetik"""
@@ -149,12 +146,15 @@ async def open_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Gagal membuka browser: {e}")
 
 async def close_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Perintah untuk menutup browser"""
+    """Perintah untuk menutup browser dengan aman"""
     global tma_driver_instance
     if tma_driver_instance:
-        tma_driver_instance.quit()
+        try:
+            tma_driver_instance.quit()
+        except:
+            pass
         tma_driver_instance = None
-        await update.message.reply_text("🔒 Browser berhasil ditutup, Boss!")
+        await update.message.reply_text("🔒 Browser berhasil ditutup total, Boss!")
     else:
         await update.message.reply_text("Browser memang sudah dalam posisi mati, Boss.")
 
