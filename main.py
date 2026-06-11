@@ -36,7 +36,7 @@ tma_driver_instance = None
 # --- FUNGSI MESIN BROWSER (SELENIUM) ---
 
 def initialize_selenium_driver():
-    """Fungsi pembuka browser otomatis yang mencari jalur biner sendiri secara cerdas"""
+    """Fungsi pembuka browser dengan jalur biner yang dipaksa string bersih"""
     options = uc.ChromeOptions()
     options.add_argument("--headless=new") # Wajib tanpa layar di Railway
     options.add_argument("--no-sandbox")
@@ -44,17 +44,30 @@ def initialize_selenium_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=414,896")
     
+    # Kita paksa masukkan alamat string jalur Chromium Railway
+    chrom_path = "/usr/bin/chromium"
+    driver_path = "/usr/bin/chromedriver"
+    
     try:
-        # Kita hapus parameter browser_executable_path & driver_executable_path
-        # Biarkan library uc mencari otomatis Chromium yang diinstal Nixpacks kemarin
-        driver = uc.Chrome(options=options)
-        logger.info("🔥 LUAR BIASA SUKSES! Undetected Chromedriver berhasil menyala otomatis!")
+        # Panggil uc.Chrome dengan mendikte kedua jalur secara tegas dalam bentuk teks string
+        driver = uc.Chrome(
+            options=options,
+            browser_executable_path=str(chrom_path),
+            driver_executable_path=str(driver_path)
+        )
+        logger.info("🔥 BOOM! Undetected Chromedriver SUKSES besar via jalur sistem!")
         return driver
     except Exception as e:
-        logger.warning(f"Pencarian otomatis uc.Chrome gagal: {e}. Mencoba versi standar lokal...")
-        # Jalur cadangan otomatis jika Boss Nanang eksekusi di Windows lokal
-        from selenium import webdriver
-        return webdriver.Chrome(options=options)
+        logger.warning(f"Jalur sistem gagal: {e}. Mencoba trik headless murni...")
+        try:
+            # Jika masih mogok, kita coba lepas driver_executable_path-nya saja, biarkan patcher uc bekerja sendiri
+            driver = uc.Chrome(options=options, browser_executable_path=str(chrom_path))
+            return driver
+        except Exception as err:
+            logger.error(f"Semua metode uc gagal: {err}. Melompat ke selenium standar lokal...")
+            # Jalur darurat (biasanya jalan kalau Boss running di laptop Windows sendiri)
+            from selenium import webdriver
+            return webdriver.Chrome(options=options)
 
 def automate_tma_action(driver, action, selector_type, selector_value, input_text=None):
     """Fungsi eksekutor tangan robot untuk nge-klik atau mengetik"""
