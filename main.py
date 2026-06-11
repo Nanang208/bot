@@ -54,55 +54,59 @@ def initialize_selenium_driver():
 
 
 
-def automate_tma_action(driver, action_data):
-    """Fungsi eksekusi aksi otomatis yang kebal dari elemen hilang/berubah"""
+def automate_tma_action(*args, **kwargs):
+    """Fungsi fleksibel yang otomatis mendeteksi driver dan data aksi tanpa peduli jumlah argumen"""
     try:
+        # Deteksi otomatis mana driver mana data aksi
+        driver = None
+        action_data = None
+        
+        for arg in args:
+            if hasattr(arg, 'execute_script'): # Ciri khas objek driver Selenium
+                driver = arg
+            elif isinstance(arg, dict):
+                action_data = arg
+                
+        if not driver and 'driver' in kwargs: driver = kwargs['driver']
+        if not action_data and 'action_data' in kwargs: action_data = kwargs['action_data']
+        if not action_data and args: action_data = args[-1] # Ambil argumen terakhir jika buntu
+
         selector_type = action_data.get("selector_type", "").lower()
         selector_value = action_data.get("selector_value", "")
         action_type = action_data.get("action_type", "").lower()
         text_to_type = action_data.get("text_to_type", "")
 
-        # Pemetaan Selector
         by_type = By.CSS_SELECTOR
-        if selector_type == "xpath":
-            by_type = By.XPATH
-        elif selector_type == "id":
-            by_type = By.ID
+        if selector_type == "xpath": by_type = By.XPATH
+        elif selector_type == "id": by_type = By.ID
 
-        # Trik 1: Beri jeda 1 detik agar halaman benar-benar tenang/selesai memuat
         time.sleep(1.5)
 
-        # Trik 2: Lakukan perulangan (Retries) sebanyak 3 kali jika elemen mendadak berubah
         for attempt in range(3):
             try:
                 element = WebDriverWait(driver, 15).until(
                     EC.presence_of_element_located((by_type, selector_value))
                 )
-                
-                # Pastikan elemen bisa diklik
                 element = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((by_type, selector_value))
                 )
 
                 if action_type == "click":
-                    # Trik 3: Gunakan JavaScript Click jika klik standar Selenium diblokir/berubah
                     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
                     time.sleep(0.5)
                     try:
                         element.click()
-                    except (ElementClickInterceptedException, StaleElementReferenceException):
+                    except:
                         driver.execute_script("arguments[0].click();", element)
-                        
                 elif action_type == "type":
                     element.clear()
                     element.send_keys(text_to_type)
                 
-                return True # Sukses! Keluar dari fungsi
+                return True
                 
-            except StaleElementReferenceException:
-                if attempt == 2: raise # Jika sudah 3x gagal, lempar eror
-                logger.warning(f"Elemen berubah mendadak, mencoba ulang ke-{attempt+1}...")
-                time.sleep(1) # Tunggu semenit sebelum coba lagi
+            except Exception as e:
+                if attempt == 2: raise
+                time.sleep(1)
                 
     except Exception as e:
         logger.error(f"Gagal eksekusi aksi otomatis: {e}")
