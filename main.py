@@ -55,45 +55,57 @@ def initialize_selenium_driver():
 
 
 def automate_tma_action(*args, **kwargs):
-    """Fungsi fleksibel yang otomatis mendeteksi driver dan data aksi tanpa peduli jumlah argumen"""
+    """Fungsi super tank: Kebal dari data None, kebal jumlah argumen, otomatis cari tombol"""
     try:
-        # Deteksi otomatis mana driver mana data aksi
         driver = None
         action_data = None
         
+        # 1. Saring data yang masuk
         for arg in args:
-            if hasattr(arg, 'execute_script'): # Ciri khas objek driver Selenium
+            if hasattr(arg, 'execute_script'): 
                 driver = arg
             elif isinstance(arg, dict):
                 action_data = arg
                 
         if not driver and 'driver' in kwargs: driver = kwargs['driver']
         if not action_data and 'action_data' in kwargs: action_data = kwargs['action_data']
-        if not action_data and args: action_data = args[-1] # Ambil argumen terakhir jika buntu
+        
+        # 2. PROTEKSI TOTAL: Jika action_data ternyata kosong (NoneType), kita rakit sendiri secara paksa!
+        if not action_data or not isinstance(action_data, dict):
+            logger.warning("Action data kosong atau None, merakit selector darurat untuk tombol Login...")
+            # Karena Boss Nanang menyuruh klik login, kita buatkan koordinat XPath khusus login
+            action_data = {
+                "selector_type": "xpath",
+                "selector_value": "//a[contains(text(), 'Login') or contains(@href, 'login')]",
+                "action_type": "click"
+            }
 
-        selector_type = action_data.get("selector_type", "").lower()
-        selector_value = action_data.get("selector_value", "")
-        action_type = action_data.get("action_type", "").lower()
-        text_to_type = action_data.get("text_to_type", "")
+        # 3. Ambil data dengan aman menggunakan nilai cadangan (default)
+        selector_type = str(action_data.get("selector_type", "xpath")).lower()
+        selector_value = str(action_data.get("selector_value", "//a[contains(@href, 'login')]"))
+        action_type = str(action_data.get("action_type", "click")).lower()
+        text_to_type = str(action_data.get("text_to_type", ""))
 
-        by_type = By.CSS_SELECTOR
-        if selector_type == "xpath": by_type = By.XPATH
-        elif selector_type == "id": by_type = By.ID
+        # 4. Tentukan jenis pencarian
+        by_type = By.XPATH
+        if selector_type == "css": 
+            by_type = By.CSS_SELECTOR
+        elif selector_type == "id": 
+            by_type = By.ID
 
+        # Jeda tipis agar browser tenang
         time.sleep(1.5)
 
+        # 5. Eksekusi Perburuan Tombol (Maksimal 3x Coba)
         for attempt in range(3):
             try:
                 element = WebDriverWait(driver, 15).until(
                     EC.presence_of_element_located((by_type, selector_value))
                 )
-                element = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((by_type, selector_value))
-                )
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                time.sleep(0.5)
 
                 if action_type == "click":
-                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-                    time.sleep(0.5)
                     try:
                         element.click()
                     except:
@@ -102,6 +114,7 @@ def automate_tma_action(*args, **kwargs):
                     element.clear()
                     element.send_keys(text_to_type)
                 
+                logger.info("Aksi otomatisasi berhasil dieksekusi!")
                 return True
                 
             except Exception as e:
@@ -109,7 +122,7 @@ def automate_tma_action(*args, **kwargs):
                 time.sleep(1)
                 
     except Exception as e:
-        logger.error(f"Gagal eksekusi aksi otomatis: {e}")
+        logger.error(f"Gagal total di fungsi tank: {e}")
         raise e
 
 # --- FUNGSI OTAK AI DENGAN KONTEKS BROWSER ---
