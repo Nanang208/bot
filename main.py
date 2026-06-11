@@ -1,4 +1,5 @@
 import re
+import json
 import time
 import logging
 import os
@@ -40,6 +41,27 @@ else:
 tma_driver_instance = None
 
 # --- FUNGSI MESIN BROWSER (SELENIUM) ---
+MEMORY_FILE = "data_memory.json"
+
+def save_to_memory(url, action_name, xpath):
+    data = {}
+    if os.path.exists(MEMORY_FILE):
+        with open(MEMORY_FILE, 'r') as f:
+            data = json.load(f)
+    
+    if url not in data:
+        data[url] = {}
+    
+    data[url][action_name] = xpath
+    with open(MEMORY_FILE, 'w') as f:
+        json.dump(data, f, indent=4)
+
+def get_from_memory(url, action_name):
+    if os.path.exists(MEMORY_FILE):
+        with open(MEMORY_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get(url, {}).get(action_name)
+    return None
 
 def initialize_selenium_driver():
     """Fungsi pembuka browser murni di dalam lingkungan Docker Linux"""
