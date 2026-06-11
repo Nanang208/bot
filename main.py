@@ -46,7 +46,7 @@ def get_ai_response(user_message: str) -> str:
     
     try:
         # Menggunakan model gemini-1.5-flash yang cepat dan pintar
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         # Memberikan instruksi sifat/karakter si AI (System Prompt)
         system_instruction = (
