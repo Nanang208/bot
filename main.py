@@ -57,76 +57,58 @@ def initialize_selenium_driver():
 
 
 
-def automate_tma_action(*args, **kwargs):
-    """Fungsi super tank: Kebal dari data None, kebal jumlah argumen, otomatis cari tombol"""
+# 1. PERBAIKAN FUNGSI EKSEKUTOR (Lebih Simpel & Stabil)
+def execute_web_action(driver, action_type, selector_type, selector_value, input_text=None):
+    """Fungsi eksekutor bersih tanpa banyak argumen ribet"""
     try:
-        driver = None
-        action_data = None
+        by = By.XPATH if selector_type == "xpath" else By.ID if selector_type == "id" else By.CSS_SELECTOR
+        element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((by, selector_value)))
         
-        # 1. Saring data yang masuk
-        for arg in args:
-            if hasattr(arg, 'execute_script'): 
-                driver = arg
-            elif isinstance(arg, dict):
-                action_data = arg
-                
-        if not driver and 'driver' in kwargs: driver = kwargs['driver']
-        if not action_data and 'action_data' in kwargs: action_data = kwargs['action_data']
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
         
-        # 2. PROTEKSI TOTAL: Jika action_data ternyata kosong (NoneType), kita rakit sendiri secara paksa!
-        if not action_data or not isinstance(action_data, dict):
-            logger.warning("Action data kosong atau None, merakit selector darurat untuk tombol Login...")
-            # Karena Boss Nanang menyuruh klik login, kita buatkan koordinat XPath khusus login
-            action_data = {
-                "selector_type": "xpath",
-                "selector_value": "//a[contains(text(), 'Login') or contains(@href, 'login')]",
-                "action_type": "click"
-            }
-
-        # 3. Ambil data dengan aman menggunakan nilai cadangan (default)
-        selector_type = str(action_data.get("selector_type", "xpath")).lower()
-        selector_value = str(action_data.get("selector_value", "//a[contains(@href, 'login')]"))
-        action_type = str(action_data.get("action_type", "click")).lower()
-        text_to_type = str(action_data.get("text_to_type", ""))
-
-        # 4. Tentukan jenis pencarian
-        by_type = By.XPATH
-        if selector_type == "css": 
-            by_type = By.CSS_SELECTOR
-        elif selector_type == "id": 
-            by_type = By.ID
-
-        # Jeda tipis agar browser tenang
-        time.sleep(1.5)
-
-        # 5. Eksekusi Perburuan Tombol (Maksimal 3x Coba)
-        for attempt in range(3):
-            try:
-                element = WebDriverWait(driver, 15).until(
-                    EC.presence_of_element_located((by_type, selector_value))
-                )
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-                time.sleep(0.5)
-
-                if action_type == "click":
-                    try:
-                        element.click()
-                    except:
-                        driver.execute_script("arguments[0].click();", element)
-                elif action_type == "type":
-                    element.clear()
-                    element.send_keys(text_to_type)
-                
-                logger.info("Aksi otomatisasi berhasil dieksekusi!")
-                return True
-                
-            except Exception as e:
-                if attempt == 2: raise
-                time.sleep(1)
-                
+        if action_type == "click":
+            element.click()
+        elif action_type == "type":
+            element.clear()
+            element.send_keys(input_text)
+        return True
     except Exception as e:
-        logger.error(f"Gagal total di fungsi tank: {e}")
-        raise e
+        logger.error(f"Gagal eksekusi: {e}")
+        return False
+
+# 2. PERBAIKAN HANDLER CHAT (Memisahkan AI dari Eksekusi)
+async def handle_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global tma_driver_instance
+    user_text = update.message.text
+    
+    # Jika browser belum buka, fokus ke AI murni
+    if not tma_driver_instance:
+        ai_reply = await asyncio.to_thread(get_ai_decision, user_text, "Browser belum buka.")
+        await update.message.reply_text(ai_reply)
+        return
+
+    # Jika browser buka, gunakan AI sebagai "Penerjemah" ke Format Action
+    ai_reply = await asyncio.to_thread(get_ai_decision, user_text, tma_driver_instance.page_source[:2000])
+    
+    if "[ACTION:" in ai_reply:
+        try:
+            # Parsing format baru yang lebih rapi
+            match = re.search(r"\[ACTION:(.*?)\|SELECTOR:(.*?)\|VALUE:(.*?)\|INPUT:(.*?)\]", ai_reply)
+            if match:
+                action, sel_type, sel_val, inp_txt = match.groups()
+                inp_txt = None if inp_txt == "none" else inp_txt
+                
+                await update.message.reply_text("⚡ *Menjalankan aksi...*")
+                success = await asyncio.to_thread(execute_web_action, tma_driver_instance, action, sel_type, sel_val, inp_txt)
+                
+                if success:
+                    await update.message.reply_text("✅ *Aksi Sukses!*")
+                else:
+                    await update.message.reply_text("❌ *Gagal:* Elemen tidak ditemukan.")
+        except Exception as e:
+            await update.message.reply_text(f"Error parsing action: {e}")
+    else:
+        await update.message.reply_text(ai_reply)
 
 # --- FUNGSI OTAK AI DENGAN KONTEKS BROWSER ---
 
