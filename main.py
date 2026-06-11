@@ -11,6 +11,7 @@ if not TOKEN:
     # Ini untuk berjaga-jaga jika di Railway variabel belum terpasang
     print("ERROR: Variabel TELEGRAM_BOT_TOKEN tidak ditemukan!")
     exit(1) # Bot akan berhenti jika tidak ada token
+print("Bot berhasil mengambil token, sedang berjalan...")   
 
 # Konfigurasi Logging agar bot bisa lapor kalau ada eror
 logging.basicConfig(
