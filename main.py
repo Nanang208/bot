@@ -36,7 +36,7 @@ tma_driver_instance = None
 # --- FUNGSI MESIN BROWSER (SELENIUM) ---
 
 def initialize_selenium_driver():
-    """Fungsi pembuka browser anti-deteksi dan bebas dari error cache manager"""
+    """Fungsi pembuka browser otomatis yang mencari jalur biner sendiri secara cerdas"""
     options = uc.ChromeOptions()
     options.add_argument("--headless=new") # Wajib tanpa layar di Railway
     options.add_argument("--no-sandbox")
@@ -45,16 +45,13 @@ def initialize_selenium_driver():
     options.add_argument("--window-size=414,896")
     
     try:
-        # Undetected Chromedriver akan langsung merakit patch menggunakan Chromium resmi Railway
-        driver = uc.Chrome(
-            options=options,
-            browser_executable_path="/usr/bin/chromium",
-            driver_executable_path="/usr/bin/chromedriver"
-        )
-        logger.info("🔥 LUAR BIASA SUKSES! Undetected Chromedriver berhasil menyala!")
+        # Kita hapus parameter browser_executable_path & driver_executable_path
+        # Biarkan library uc mencari otomatis Chromium yang diinstal Nixpacks kemarin
+        driver = uc.Chrome(options=options)
+        logger.info("🔥 LUAR BIASA SUKSES! Undetected Chromedriver berhasil menyala otomatis!")
         return driver
     except Exception as e:
-        logger.warning(f"Gagal memicu uc.Chrome di Linux: {e}. Mencoba versi standar lokal...")
+        logger.warning(f"Pencarian otomatis uc.Chrome gagal: {e}. Mencoba versi standar lokal...")
         # Jalur cadangan otomatis jika Boss Nanang eksekusi di Windows lokal
         from selenium import webdriver
         return webdriver.Chrome(options=options)
