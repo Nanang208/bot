@@ -1,225 +1,177 @@
-import re
-import json
-import time
-import logging
 import os
-import asyncio
-import random
-from dotenv import load_dotenv
+import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from web3 import Web3
-import google.generativeai as genai
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.constants import ParseMode, ChatAction
+from memory import add_knowledge, get_all_knowledge, delete_knowledge, build_system_prompt
+from ai_engine import get_ai_response
+from tools import get_crypto_price, is_price_query
 
-# Library Resmi Browser Otomatis (Selenium) - Sudah Bersih & Rapi
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service
-from selenium.common.exceptions import StaleElementReferenceException, ElementClickInterceptedException
-
-# Memuat data rahasia
-load_dotenv(override=True)
-
-# Konfigurasi Logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WALLET_PRIVATE_KEY = os.getenv("WALLET_PRIVATE_KEY")
-WEB3_PROVIDER_URL = os.getenv("WEB3_PROVIDER_URL")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OWNER_ID = int(os.getenv("OWNER_TELEGRAM_ID", "0"))
 
-# Inisialisasi AI Gemini
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-else:
-    print("PERINGATAN: GEMINI_API_KEY tidak ditemukan!")
-
-# Variabel Global untuk menyimpan browser yang sedang aktif
-tma_driver_instance = None
-
-# --- FUNGSI MESIN BROWSER (SELENIUM) ---
-MEMORY_FILE = "data_memory.json"
-
-def save_to_memory(url, action_name, xpath):
-    data = {}
-    if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, 'r') as f:
-            data = json.load(f)
-    
-    if url not in data:
-        data[url] = {}
-    
-    data[url][action_name] = xpath
-    with open(MEMORY_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
-
-def get_from_memory(url, action_name):
-    if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, 'r') as f:
-            data = json.load(f)
-            return data.get(url, {}).get(action_name)
-    return None
-
-def initialize_selenium_driver():
-    """Fungsi pembuka browser murni di dalam lingkungan Docker Linux"""
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new") # Wajib di server cloud
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=414,896")
-    options.add_argument("user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
-    
-    # Karena ini di Docker Chrome Resmi, lokasinya otomatis terbaca oleh sistem!
-    driver = webdriver.Chrome(options=options)
-    logger.info("🚀 DOCKER CHROME BERHASIL MENYALA SEMPURNA!")
-    return driver
-
-
-
-# 1. PERBAIKAN FUNGSI EKSEKUTOR (Lebih Simpel & Stabil)
-def execute_web_action(driver, action_type, selector_type, selector_value, input_text=None):
-    """Fungsi eksekutor bersih tanpa banyak argumen ribet"""
-    try:
-        by = By.XPATH if selector_type == "xpath" else By.ID if selector_type == "id" else By.CSS_SELECTOR
-        element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((by, selector_value)))
-        
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-        
-        if action_type == "click":
-            element.click()
-        elif action_type == "type":
-            element.clear()
-            element.send_keys(input_text)
-        return True
-    except Exception as e:
-        logger.error(f"Gagal eksekusi: {e}")
-        return False
-
-# --- FUNGSI OTAK AI DENGAN KONTEKS BROWSER ---
-
-def get_ai_decision(user_message: str, page_source: str) -> str:
-    """Fungsi otak AI untuk memutuskan tindakan berdasarkan isi halaman web saat ini"""
-    if not GEMINI_API_KEY:
-        return "Otak AI belum aktif."
-    
-    try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
-        # System prompt agar AI membalas normal ATAU memberikan instruksi kode rahasia jika diperintah aksi web
-        system_instruction = (
-            "Kamu adalah Asisten Cuan Maximal, AI Agent otomatisasi airdrop crypto.\n"
-            "Panggil user dengan 'Boss'. Jika user menyuruh melakukan sesuatu di halaman web, "
-            "kamu harus menganalisis HTML yang diberikan dan sertakan format perintah khusus di akhir jawabanmu "
-            "dengan format: [ACTION:action_type|SELECTOR:type|VALUE:value|INPUT:text].\n"
-            "Contoh jika disuruh klik tombol claim: 'Siap Boss, saya klik tombol claimnya sekarang! [ACTION:click|SELECTOR:id|VALUE:claim-btn|INPUT:none]'\n"
-            "Jika hanya obrolan biasa atau HTML kosong, jawablah seperti biasa tanpa format tanda kurung tersebut."
-        )
-        
-        # Batasi HTML agar tidak kepenuhan (4000 karakter pertama)
-        html_context = page_source[:4000] if page_source else "Browser belum dibuka / halaman kosong."
-        
-        full_prompt = f"{system_instruction}\n\nHTML Halaman Saat Ini:\n\"\"\"\n{html_context}\n\"\"\"\n\nUser berkata: {user_message}"
-        response = model.generate_content(full_prompt)
-        return response.text
-    except Exception as e:
-        return f"Aduh Boss, otak AI saya sedang error: {e}"
-
-# --- KUMPULAN HANDLER TELEGRAM ---
+def is_owner(update: Update) -> bool:
+    return update.effective_user.id == OWNER_ID
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Halo Boss! Asisten Cuan Maximal + Agen Otomatisasi Browser siap! Ketik /open_web [URL] untuk buka web, atau langsung CHAT saja.')
+    if not is_owner(update): return
+    await update.message.reply_text(
+        "🤖 *AirdropBot AI aktif!*\n\n"
+        "Aku siap bantu kamu bikin kode, debug error, cek harga crypto, dan otomatisasi airdrop/farming.\n\n"
+        "*Commands:*\n"
+        "💬 Chat langsung — ngobrol, minta kode, tanya harga crypto\n"
+        "/learn — ajari aku kode atau pengetahuan baru\n"
+        "/knowledge — lihat semua yang sudah aku pelajari\n"
+        "/forget [no] — hapus pengetahuan tertentu\n"
+        "/help — panduan lengkap",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
-async def open_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Perintah untuk menyuruh bot membuka browser ke URL tertentu"""
-    global tma_driver_instance
-    if not context.args:
-        await update.message.reply_text("Contoh penggunaan: /open_web https://example.com")
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update): return
+    await update.message.reply_text(
+        "📖 *Panduan AirdropBot AI*\n\n"
+        "*💬 Chat:*\n"
+        "Ketik langsung — ngobrol, minta kode, paste error, tanya harga crypto\n\n"
+        "*💰 Harga Crypto Real-time:*\n"
+        "Cukup tanya: `harga BTC`, `price ETH`, `berapa harga SOL`\n\n"
+        "*🧠 Ajarkan Pengetahuan:*\n"
+        "`/learn [kode atau info]`\n"
+        "Tersimpan permanen di database!\n\n"
+        "*📚 Kelola Pengetahuan:*\n"
+        "`/knowledge` — lihat semua\n"
+        "`/forget 3` — hapus nomor 3\n\n"
+        "*💡 Tips:*\n"
+        "• Paste error langsung ke chat untuk diperbaiki\n"
+        "• Bot auto fallback Gemini → Groq jika limit\n"
+        "• Semua pembelajaran tersimpan permanen di MongoDB",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def learn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update): return
+    text = update.message.text.replace("/learn", "").strip()
+    if not text:
+        await update.message.reply_text(
+            "❓ Format: `/learn [kode atau info yang mau diajarkan]`",
+            parse_mode=ParseMode.MARKDOWN
+        )
         return
-        
-    url = context.args[0]
-    await update.message.reply_text(f"🌐 Sedang membuka browser ke {url}... Mohon tunggu, Boss.")
-    
-    try:
-        loop = asyncio.get_running_loop()
-        if not tma_driver_instance:
-            tma_driver_instance = await loop.run_in_executor(None, initialize_selenium_driver)
-            
-        await loop.run_in_executor(None, tma_driver_instance.get, url)
-        await update.message.reply_text("✅ Browser Berhasil dibuka! Sekarang Boss bisa perintah saya lewat chat biasa untuk klik atau isi form di web itu.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Gagal membuka browser: {e}")
 
-async def close_web(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Perintah untuk menutup browser dengan aman"""
-    global tma_driver_instance
-    if tma_driver_instance:
-        try:
-            tma_driver_instance.quit()
-        except:
-            pass
-        tma_driver_instance = None
-        await update.message.reply_text("🔒 Browser berhasil ditutup total, Boss!")
+    await update.message.reply_chat_action(ChatAction.TYPING)
+
+    analysis_prompt = f"""User ingin mengajarkan kamu pengetahuan/kode baru ini:
+
+{text}
+
+Analisa dalam 3-4 kalimat singkat:
+1. Ini kode/info tentang apa
+2. Teknik atau library apa yang dipakai
+3. Bagaimana ini berguna ke depannya
+
+Jawab santai dalam bahasa Indonesia."""
+
+    reply, _ = get_ai_response(analysis_prompt)
+
+    text_lower = text.lower()
+    if any(w in text_lower for w in ["import", "def ", "class ", "selenium", "playwright", "requests"]):
+        label = "kode"
+    elif any(w in text_lower for w in ["game", "airdrop", "farm", "claim", "token"]):
+        label = "airdrop/game"
+    elif any(w in text_lower for w in ["api", "endpoint", "http", "url"]):
+        label = "api/endpoint"
     else:
-        await update.message.reply_text("Browser memang sudah dalam posisi mati, Boss.")
+        label = "umum"
 
-async def handle_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global tma_driver_instance
+    kid = add_knowledge(text, label)
+
+    await update.message.reply_text(
+        f"✅ *Pengetahuan #{kid} tersimpan permanen!*\n"
+        f"📂 Kategori: `{label}`\n\n"
+        f"🧠 *Analisa:*\n{reply}",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def knowledge(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update): return
+    items = get_all_knowledge()
+    if not items:
+        await update.message.reply_text("📭 Belum ada pengetahuan.\n\nGunakan /learn untuk mengajariku!")
+        return
+
+    text = f"📚 *Pengetahuan Bot ({len(items)} item):*\n\n"
+    for k in items:
+        preview = k["content"][:80] + "..." if len(k["content"]) > 80 else k["content"]
+        text += f"*#{k['id']}* [{k['label']}] — {k['added_at']}\n`{preview}`\n\n"
+    text += "Hapus dengan: `/forget [nomor]`"
+
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+async def forget(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update): return
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("Format: `/forget [nomor]`", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    kid = int(args[0])
+    if delete_knowledge(kid):
+        await update.message.reply_text(f"🗑️ Pengetahuan #{kid} dihapus.")
+    else:
+        await update.message.reply_text(f"❌ Pengetahuan #{kid} tidak ditemukan.")
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_owner(update): return
+
     user_text = update.message.text
-    
-    if not tma_driver_instance:
-        await update.message.reply_text("⚠️ Browser belum aktif! Ketik /open_web [URL] dulu, Boss.")
-        return
+    await update.message.reply_chat_action(ChatAction.TYPING)
 
-    status_msg = await update.message.reply_text("🤖 *Menganalisis perintah...*")
-    
-    # 1. AI Menganalisis & Memberikan daftar aksi
-    ai_reply = await asyncio.to_thread(get_ai_decision, user_text, tma_driver_instance.page_source[:2000])
-    
-    # 2. Jika AI mengeluarkan perintah [ACTION:...]
-    if "[ACTION:" in ai_reply:
-        # Menggunakan regex untuk menangkap SEMUA aksi (bisa lebih dari satu!)
-        actions = re.findall(r"\[ACTION:(.*?)\|SELECTOR:(.*?)\|VALUE:(.*?)\|INPUT:(.*?)\]", ai_reply)
-        
-        if actions:
-            clean_reply = ai_reply.split("[ACTION:")[0].strip()
-            await status_msg.edit_text(f"🤖 {clean_reply}\n\n⚡ *Menjalankan {len(actions)} aksi...*")
-            
-            for action, sel_type, sel_val, inp_txt in actions:
-                # Bersihkan input
-                input_val = None if inp_txt == "none" else inp_txt
-                
-                # Eksekusi aksi satu per satu
-                success = await asyncio.to_thread(execute_web_action, tma_driver_instance, action, sel_type, sel_val, input_val)
-                
-                if not success:
-                    await update.message.reply_text(f"❌ *Gagal di:* {sel_val}. Mungkin elemen belum muncul/salah selector?")
-                    return # Stop jika ada yang gagal
-                
-                await asyncio.sleep(1) # Jeda agar bot tidak diblokir web
-            
-            await update.message.reply_text("✅ *Semua aksi sukses dilakukan, Boss!*")
-        else:
-            await status_msg.edit_text("❌ AI mengeluarkan perintah tapi formatnya tidak terbaca.")
+    # Cek dulu apakah tanya harga crypto
+    if is_price_query(user_text):
+        price_result = get_crypto_price(user_text)
+        if price_result:
+            await update.message.reply_text(price_result, parse_mode=ParseMode.MARKDOWN)
+            return
+
+    # Chat biasa ke AI
+    reply, provider = get_ai_response(user_text)
+
+    footer = "\n\n_⚡ via Groq_" if provider == "groq" else ""
+    full_reply = reply + footer
+
+    if len(full_reply) > 4096:
+        chunks = [full_reply[i:i+4096] for i in range(0, len(full_reply), 4096)]
+        for chunk in chunks:
+            try:
+                await update.message.reply_text(chunk, parse_mode=ParseMode.MARKDOWN)
+            except:
+                await update.message.reply_text(chunk)
     else:
-        # Jika bukan perintah aksi, tampilkan jawaban chat biasa
-        await status_msg.edit_text(ai_reply)
+        try:
+            await update.message.reply_text(full_reply, parse_mode=ParseMode.MARKDOWN)
+        except:
+            await update.message.reply_text(reply)
 
-# --- FUNGSI UTAMA ---
 def main():
-    if not TELEGRAM_BOT_TOKEN: return
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    token = os.getenv("TELEGRAM_TOKEN")
+    if not token:
+        raise ValueError("TELEGRAM_TOKEN tidak ditemukan!")
+    if OWNER_ID == 0:
+        raise ValueError("OWNER_TELEGRAM_ID tidak ditemukan!")
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("open_web", open_web))
-    application.add_handler(CommandHandler("close_web", close_web))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_chat))
+    app = Application.builder().token(token).build()
 
-    print("Bot AI Agent + Browser siap grak!")
-    application.run_polling()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("learn", learn))
+    app.add_handler(CommandHandler("knowledge", knowledge))
+    app.add_handler(CommandHandler("forget", forget))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-if __name__ == '__main__':
+    logger.info("🤖 AirdropBot AI berjalan...")
+    app.run_polling(drop_pending_updates=True)
+
+if __name__ == "__main__":
     main()
